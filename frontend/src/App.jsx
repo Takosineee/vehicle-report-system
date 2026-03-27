@@ -105,22 +105,35 @@ function App() {
   // }, [filters.fleets]);
 
 
-  const formatDate = (date) => {
+  const formatLocalDateTime = (date, time) => {
     if (!date) return '';
+
+    return new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      Number(time),
+      0,
+      0
+    );
+  };
+  const formatDisplayDateTime = (value) => {
+    const date = new Date(value);
+    if (isNaN(date)) return '';
 
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
 
-    return `${year}/${month}/${day}`;
+    return `${year}/${month}/${day} ${hour}:${minute}`;
   };
-
   const loadData = async () => {
     setLoading(true)
     const processedFilters = {
       ...filters,
-      startDate: formatDate(filters.startDate),
-      endDate: formatDate(filters.endDate),
+
       startTime: filters.startTime?.name || '',
       endTime: filters.endTime?.name || ''
     };
@@ -132,7 +145,15 @@ function App() {
 
       return
     }
-    await fetchReport(processedFilters);
+    const data = {
+      fleets: processedFilters.fleets,
+      cars: processedFilters.cars,
+      beginDateTime: formatLocalDateTime(processedFilters.startDate, processedFilters.startTime),
+      endDateTime: formatLocalDateTime(processedFilters.endDate, processedFilters.endTime)
+    };
+    console.log(data)
+    await fetchReport(data);
+    setLoading(false)
   }
 
   const fetchReport = async (loadedFilters) => {
@@ -144,15 +165,20 @@ function App() {
         },
         body: JSON.stringify(loadedFilters)
       })
-      const data = await response.json()
-      setReportData(data)
-      setHasSearched(true)
-      setSearchTimeRange(`${loadedFilters.startDate} ~ ${loadedFilters.endDate}`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setReportData(data)
+        setHasSearched(true)
+        setSearchTimeRange(
+          `${formatDisplayDateTime(loadedFilters.beginDateTime)} ~ ${formatDisplayDateTime(loadedFilters.endDateTime)}`
+        )
+      }
+
+
     } catch (error) {
+
       console.error('Error fetching report:', error)
-      alert('無法取得報表資料，請確認後端服務是否已啟動。')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -310,7 +336,7 @@ function App() {
                 }
               }}
               placeholder={loadingCars ? "載入中..." : "請選擇車號"}
-              disabled={!filters.fleets?.length||loadingCars}
+              disabled={!filters.fleets?.length || loadingCars}
               options={loadingCars ? [] : carsByFleetIds.map(c => ({ label: c.label, value: c.value }))}
               loading={loadingCars}
             />
@@ -338,6 +364,7 @@ function App() {
                 ...prev,
                 startTime: e.value
               }))
+
             }} options={hours.map(h => ({ name: h, code: h }))} optionLabel="name"
               placeholder="請選擇時間" className="w-full md:h-3rem" checkmark={true} highlightOnSelect={false} />
 
@@ -385,13 +412,18 @@ function App() {
         </div>
 
         <div className="result-section shadow-sm">
-          <div className="col-3 mb-3">
+          <div className="grid">
+          <div className="col-10 mb-3">
             {hasSearched && <span className="date-range-display">日期區間: {searchTimeRange}</span>}
+            
+          </div>
+          <div className="col-2 mb-3">
+            
             <Button severity="success" label={
               (<><i className="pi pi-file-excel" ></i><span className="m-1">匯出Excel</span></>)} outlined onClick={handleExport} disabled={loading} />
           </div>
           <ReportTable reportData={reportData} loading={loading} />
-
+</div>
         </div>
       </div>
     </div>
