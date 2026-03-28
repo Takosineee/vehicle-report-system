@@ -4,7 +4,7 @@ import { Column } from 'primereact/column';
 import { ColumnGroup } from 'primereact/columngroup';
 import { Row } from 'primereact/row';
 
-export default function ReportTable({ reportData = [], loading }) {
+export default function ReportTable({ tableHeader='',reportData = [], loading }) {
   const headerGroup = (
     <ColumnGroup>
       <Row>
@@ -37,13 +37,14 @@ export default function ReportTable({ reportData = [], loading }) {
   return (
       <DataTable
         value={reportData}
-        dataKey="seq"
+        dataKey="id"
         showGridlines
         stripedRows
         loading={loading}
         emptyMessage={loading ? '資料載入中...' : '請選擇條件並點擊「檢視報表」'}
         headerColumnGroup={headerGroup}
-        className="report-table text-xs"
+        header={tableHeader}
+        className="report-table text-s"
       >
         <Column field="CarNo" />
         <Column field="TripDate" />

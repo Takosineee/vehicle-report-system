@@ -9,17 +9,12 @@ import { InputText } from "primereact/inputtext";
 import { Button } from 'primereact/button';
 import { Toast } from 'primereact/toast';
 import ReportTable from './ReportTable';
-import { useClickOutside } from 'primereact/hooks';
 import '../node_modules/primeicons/primeicons.css';
 import '../node_modules/primeflex/primeflex.css'
 import './App.css'
 
-
-
-
-
-
 function App() {
+  //const COMPANY_ID="201705-000001";
   const apiUrl = import.meta.env.VITE_API_URL;
   const [filters, setFilters] = useState({
     fleets: [],
@@ -29,8 +24,10 @@ function App() {
     startTime: '',
     endTime: ''
   })
-
+  const [companyId, setCompanyId] = useState('')
   const [reportData, setReportData] = useState([])
+  const [tableHeader, setTableHeader] = useState('');
+
   const [loading, setLoading] = useState(false)
   const [loadingFleets, setLoadingFleets] = useState(false)
   const [loadingCars, setLoadingCars] = useState(false)
@@ -46,13 +43,20 @@ function App() {
   let today = new Date();
   let minDate = new Date(today);
   minDate.setMonth(today.getMonth() - 3);
-  // Fetch fleets
+
   const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'))
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setCompanyId(params.get('companyId') || '');
+    
+  }, []);
 
   const fetchFleets = async () => {
     try {
+      console.log(companyId);
       setLoadingFleets(true)
-      const res = await fetch(`${apiUrl}/api/getFleets`);
+      const res = await fetch(`${apiUrl}/api/getFleets?companyId=${companyId}`);
       const data = await res.json();
       const fleetOptions = data.map(f => ({
         label: f.FleetName,
@@ -98,14 +102,10 @@ function App() {
     }
   }
 
-  // useEffect(() => {
-  //   if (!filters.fleets?.length) return;
-  //   fetchCarsByFleetIds(filters.fleets);
-
-  // }, [filters.fleets]);
 
 
-  const formatLocalDateTime = (date, time) => {
+
+  const formatDateTime = (date, time) => {
     if (!date) return '';
 
     return new Date(
@@ -130,48 +130,55 @@ function App() {
     return `${year}/${month}/${day} ${hour}:${minute}`;
   };
   const loadData = async () => {
-    setLoading(true)
-    const processedFilters = {
-      ...filters,
 
+    const newFilters = {
+      ...filters,
       startTime: filters.startTime?.name || '',
       endTime: filters.endTime?.name || ''
     };
 
-    if (!processedFilters.fleets?.length || !processedFilters.cars?.length || !processedFilters.startDate || !processedFilters.endDate || !processedFilters.startTime || !processedFilters.endTime) {
-      setLoading(false)
-
+    if (!newFilters.fleets?.length || !newFilters.cars?.length || !newFilters.startDate || !newFilters.endDate || !newFilters.startTime || !newFilters.endTime) {
+      setLoading(false);
       toast.current.show({ severity: 'warn', summary: 'Warning', detail: '請填寫完整搜尋條件', life: 3000 });
-
-      return
+      return;
     }
+
+    const formatBegin = formatDateTime(newFilters.startDate, newFilters.startTime);
+    const formatEnd = formatDateTime(newFilters.endDate, newFilters.endTime)
+    if (formatBegin > formatEnd) {
+      setLoading(false);
+      toast.current.show({ severity: 'warn', summary: 'Warning', detail: '開始日期應小於結束日期', life: 3000 });
+      return;
+    }
+
     const data = {
-      fleets: processedFilters.fleets,
-      cars: processedFilters.cars,
-      beginDateTime: formatLocalDateTime(processedFilters.startDate, processedFilters.startTime),
-      endDateTime: formatLocalDateTime(processedFilters.endDate, processedFilters.endTime)
+      fleets: newFilters.fleets,
+      cars: newFilters.cars,
+      beginDateTime: formatBegin,
+      endDateTime: formatEnd,
+      companyId: companyId
     };
-    console.log(data)
     await fetchReport(data);
-    setLoading(false)
   }
 
-  const fetchReport = async (loadedFilters) => {
+  const fetchReport = async (loadedData) => {
+    setLoading(true);
     try {
       const response = await fetch(`${apiUrl}/api/report`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(loadedFilters)
+        body: JSON.stringify(loadedData)
       })
 
       if (response.ok) {
         const data = await response.json()
-        setReportData(data)
-        setHasSearched(true)
+        setHasSearched(true);
+        setTableHeader(data.header || '');
+        setReportData(data.rows || []);
         setSearchTimeRange(
-          `${formatDisplayDateTime(loadedFilters.beginDateTime)} ~ ${formatDisplayDateTime(loadedFilters.endDateTime)}`
+          `${formatDisplayDateTime(loadedData.beginDateTime)} ~ ${formatDisplayDateTime(loadedData.endDateTime)}`
         )
       }
 
@@ -179,31 +186,66 @@ function App() {
     } catch (error) {
 
       console.error('Error fetching report:', error)
+    } finally {
+      setLoading(false);
     }
   }
 
-  const excelExport = async () => {
+const excelExport = () => {
+  if (!reportData || reportData.length === 0) {
+    alert('沒有可匯出的資料');
+    return;
+  }
 
-    const headerRow1 = [
-      '基本資料', '', '',
-      '啟動', '', '',
-      '熄火', '', '',
-      '行駛',
-      '運行',
-      '停留'
-    ];
+  const headerRow0 = [`日期區間:${searchTimeRange || ''}`];
+  const headerRow1 = ['台灣順豐公司行程明細表'];
 
-    const headerRow2 = [
-      '車號', '日期', '序號',
-      '時間', '區域', '地址',
-      '時間', '區域', '地址',
-      '距離(KM)',
-      '時間(min)',
-      '時間(min)'
-    ];
+  const headerRow2 = [
+    '基本資料', '', '',
+    '啟動', '', '',
+    '熄火', '', '',
+    '行駛',
+    '運行',
+    '停留'
+  ];
 
-    const dataRows = reportData.flatMap((row) => [
-      [
+  const headerRow3 = [
+    '車號', '日期', '序號',
+    '時間', '區域', '地址',
+    '時間', '區域', '地址',
+    '距離(KM)',
+    '時間(min)',
+    '時間(min)'
+  ];
+
+  // Group by CarNo + TripDate
+  const groupMap = new Map();
+
+  reportData.forEach((row) => {
+    const key = `${row.CarNo ?? ''}__${row.TripDate ?? ''}`;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, []);
+    }
+    groupMap.get(key).push(row);
+  });
+
+  const dataRows = [];
+
+  for (const [, rows] of groupMap) {
+    let totalDistance = 0;
+    let totalDrivingTime = 0;
+    let totalStayTime = 0;
+
+    rows.forEach((row) => {
+      const distance = Number(row.TotalDistance) || 0;
+      const drivingTime = Number(row.TotalDrivingTime) || 0;
+      const stayTime = Number(row.StayTime) || 0;
+
+      totalDistance += distance;
+      totalDrivingTime += drivingTime;
+      totalStayTime += stayTime;
+
+      dataRows.push([
         row.CarNo ?? '',
         row.TripDate ?? '',
         row.seq ?? '',
@@ -213,64 +255,92 @@ function App() {
         row.EndTime ?? '',
         row.EndArea ?? '',
         row.EndAddress ?? '',
-        row.TotalDistance ?? '',
-        row.TotalDrivingTime ?? '',
-        row.StayTime ?? ''
-      ],
-      [
-        '合計', '', '', '', '', '', '', '', '',
-        row.TotalDistance ?? '',
-        row.TotalDrivingTime ?? '',
-        row.StayTime ?? ''
-      ]
+        distance || '',
+        drivingTime || '',
+        stayTime || ''
+      ]);
+    });
+
+    dataRows.push([
+      '合計', '', '', '', '', '', '', '', '',
+      Number(totalDistance.toFixed(2)),
+      Number(totalDrivingTime.toFixed(2)),
+      Number(totalStayTime.toFixed(2))
     ]);
-
-    const wsData = [headerRow1, headerRow2, ...dataRows];
-
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
-
-    worksheet['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
-      { s: { r: 0, c: 3 }, e: { r: 0, c: 5 } },
-      { s: { r: 0, c: 6 }, e: { r: 0, c: 8 } },
-      { s: { r: 0, c: 9 }, e: { r: 0, c: 9 } },
-      { s: { r: 0, c: 10 }, e: { r: 0, c: 10 } },
-      { s: { r: 0, c: 11 }, e: { r: 0, c: 11 } }
-    ];
-
-    worksheet['!cols'] = [
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 8 },
-      { wch: 12 },
-      { wch: 15 },
-      { wch: 30 },
-      { wch: 12 },
-      { wch: 15 },
-      { wch: 30 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 }
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
-
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: 'xlsx',
-      type: 'array'
-    });
-
-    const blob = new Blob([excelBuffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8'
-    });
-
-    saveAs(blob, 'report.xlsx');
   }
+
+  const wsData = [headerRow0, headerRow1, headerRow2, headerRow3, ...dataRows];
+  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Merge cells
+  worksheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }, // 日期區間
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }, // 標題
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 2 } },  // 基本資料
+    { s: { r: 2, c: 3 }, e: { r: 2, c: 5 } },  // 啟動
+    { s: { r: 2, c: 6 }, e: { r: 2, c: 8 } },  // 熄火
+    { s: { r: 2, c: 9 }, e: { r: 2, c: 9 } },  // 行駛
+    { s: { r: 2, c: 10 }, e: { r: 2, c: 10 } }, // 運行
+    { s: { r: 2, c: 11 }, e: { r: 2, c: 11 } }  // 停留
+  ];
+
+  // Merge total rows A:I
+  let currentRowIndex = 4; // data starts from row index 4 (Excel row 5)
+  for (const [, rows] of groupMap) {
+    currentRowIndex += rows.length;
+    worksheet['!merges'].push({
+      s: { r: currentRowIndex, c: 0 },
+      e: { r: currentRowIndex, c: 8 }
+    });
+    currentRowIndex += 1;
+  }
+
+  // Column widths
+  worksheet['!cols'] = [
+    { wch: 12 }, // 車號
+    { wch: 12 }, // 日期
+    { wch: 8 },  // 序號
+    { wch: 20 }, // 啟動時間
+    { wch: 12 }, // 啟動區域
+    { wch: 35 }, // 啟動地址
+    { wch: 20 }, // 熄火時間
+    { wch: 12 }, // 熄火區域
+    { wch: 35 }, // 熄火地址
+    { wch: 12 }, // 距離
+    { wch: 12 }, // 運行
+    { wch: 12 }  // 停留
+  ];
+
+  // Optional: simple alignment only, no fill color
+  const range = XLSX.utils.decode_range(worksheet['!ref']);
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!worksheet[cellRef]) continue;
+
+      worksheet[cellRef].s = {
+        alignment: {
+          vertical: 'center',
+          horizontal:
+            R <= 3 || C === 0 || C === 1 || C === 2 || C >= 9
+              ? 'center'
+              : 'left',
+          wrapText: true
+        }
+      };
+    }
+  }
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
+
+  XLSX.writeFile(workbook, 'report.xlsx');
+};
 
   const handleExport = async () => {
     if (!reportData?.length) {
-      alert("無資料")
+      toast.current.show({ severity: 'warn', summary: 'Warning', detail: '請先選擇檢視報表', life: 3000 });
+
       return;
     }
     await excelExport();
@@ -396,34 +466,32 @@ function App() {
           </div>
 
 
-
-          <div className="col-12">
+          <div className='col-1'></div>
+          <div className="col-10">
             <div className='justify-content-center flex card'>
               <Button label={loading ? (
                 <>
-
                   <i className="pi pi-spin pi-spinner"></i><span className="m-2">載入中</span>
                 </>
               ) : (<><i className="pi pi-eye" ></i><span className="m-2">檢視報表</span></>)} raised onClick={loadData} disabled={loading} />
-
             </div>
           </div>
-
-        </div>
-
-        <div className="result-section shadow-sm">
-          <div className="grid">
-          <div className="col-10 mb-3">
-            {hasSearched && <span className="date-range-display">日期區間: {searchTimeRange}</span>}
-            
-          </div>
-          <div className="col-2 mb-3">
-            
+          <div className='col-1'>
             <Button severity="success" label={
               (<><i className="pi pi-file-excel" ></i><span className="m-1">匯出Excel</span></>)} outlined onClick={handleExport} disabled={loading} />
           </div>
-          <ReportTable reportData={reportData} loading={loading} />
-</div>
+
+        </div>
+      </div>
+
+      <div className="result-section shadow-sm">
+        <div className="grid">
+          <div className="col-10 mb-3">
+            {hasSearched && <span className="date-range-display">日期區間: {searchTimeRange}</span>}
+
+          </div>
+          <div className="col-12">
+            <ReportTable header={tableHeader} reportData={reportData} loading={loading} /></div>
         </div>
       </div>
     </div>
