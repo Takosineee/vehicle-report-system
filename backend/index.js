@@ -9,15 +9,6 @@ const port = 3000;
 app.use(cors());
 app.use(express.json());
 
-// const limitDate = getLimitTripDate(3);
-
-// function getLimitTripDate(monthCount) {
-//   const today = new Date();
-//   today.setMonth(today.getMonth() - monthCount);
-//   const startDateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
-//   return startDateStr;
-// }
-
 const formatDisplayDateTime = (value) => {
   const date = new Date(value);
   if (isNaN(date)) return '';
@@ -208,7 +199,6 @@ async function getTripLog(carId, begin, end) {
 
     for await (const entity of entities) {
       logs.push(entity);
-      console.log(entity)
     }
   }
 
@@ -229,7 +219,6 @@ app.get('/api/getFleets', async (req, res) => {
 
 app.get('/api/getCarsByFleetIds', async (req, res) => {
   const { fleetID } = req.query;
-  console.log(fleetID)
   if (!fleetID) {
     return res.status(400).json({ error: 'fleetIds is required' });
   }

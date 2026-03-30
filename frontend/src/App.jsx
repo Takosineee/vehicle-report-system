@@ -54,7 +54,6 @@ function App() {
 
   const fetchFleets = async () => {
     try {
-      console.log(companyId);
       setLoadingFleets(true)
       const res = await fetch(`${apiUrl}/api/getFleets?companyId=${companyId}`);
       const data = await res.json();
