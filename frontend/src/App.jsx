@@ -175,7 +175,7 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         setHasSearched(true);
-        setTableHeader(data.header || '');
+        setTableHeader(`${data.header}公司行程明細表` || '');
         setReportData(data.rows || []);
         setSearchTimeRange(
           `${formatDisplayDateTime(loadedData.beginDateTime)} ~ ${formatDisplayDateTime(loadedData.endDateTime)}`
@@ -198,7 +198,7 @@ function App() {
     }
 
     const headerRow0 = [`日期區間:${searchTimeRange || ''}`];
-    const headerRow1 = [`${tableHeader}行程明細表`];
+    const headerRow1 = [`${tableHeader}`];
 
     const headerRow2 = [
       '基本資料', '', '',

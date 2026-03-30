@@ -177,13 +177,12 @@ function getDatesBetween(startDate, endDate) {
   return dates;
 }
 
-async function filteredTripLog(carId, begin, end) {
+async function getTripLog(carId, begin, end) {
   const logs = [];
   const allDates = getDatesBetween(begin, end);
 
   for (const date of allDates) {
     const key = createPartitionKey(carId, date);
-    console.log('key:', key);
 
     const entities = storageClient.listEntities({
       queryOptions: {
@@ -209,6 +208,7 @@ async function filteredTripLog(carId, begin, end) {
 
     for await (const entity of entities) {
       logs.push(entity);
+      console.log(entity)
     }
   }
 
@@ -270,7 +270,7 @@ app.post('/api/report', async (req, res) => {
     const reportLogs = [];
 
     for (const carId of cars) {
-      const logs = await filteredTripLog(carId, begin, end);
+      const logs = await getTripLog(carId, begin, end);
       const filteredLogs = logs.filter(t =>
         new Date(t.BEGIN_TIME) >= begin &&
         new Date(t.END_TIME) <= end
@@ -330,7 +330,7 @@ app.post('/api/report', async (req, res) => {
         BeginTime: "",
         EndTime: "",
         TripDate: "",
-        CarNo: `${carNo} 合計`,
+        CarNo: `合計`,
         BegArea: "",
         EndArea: "",
         TotalDistance: Number(totalDistance.toFixed(2)),
@@ -345,6 +345,7 @@ app.post('/api/report', async (req, res) => {
     }
 
     res.json({
+      header: getCache(cacheStore.companyName, companyId),
       rows: reportLogs
     });
   } catch (err) {

@@ -4,7 +4,7 @@ import { Column } from 'primereact/column';
 import { ColumnGroup } from 'primereact/columngroup';
 import { Row } from 'primereact/row';
 
-export default function ReportTable({ tableHeader = '', reportData = [], loading }) {
+export default function ReportTable({ header = '', reportData = [], loading }) {
   const headerGroup = (
     <ColumnGroup>
       <Row>
@@ -54,7 +54,7 @@ export default function ReportTable({ tableHeader = '', reportData = [], loading
       rowClassName={rowClassName}
       emptyMessage={loading ? '資料載入中...' : '請選擇條件並點擊「檢視報表」'}
       headerColumnGroup={headerGroup}
-      header={tableHeader}
+      header={header}
       className="report-table text-s"
     >
       <Column field="CarNo" body={carNoBody} />
