@@ -49,7 +49,7 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setCompanyId(params.get('companyId') || '');
-    
+
   }, []);
 
   const fetchFleets = async () => {
@@ -191,61 +191,44 @@ function App() {
     }
   }
 
-const excelExport = () => {
-  if (!reportData || reportData.length === 0) {
-    alert('沒有可匯出的資料');
-    return;
-  }
-
-  const headerRow0 = [`日期區間:${searchTimeRange || ''}`];
-  const headerRow1 = ['台灣順豐公司行程明細表'];
-
-  const headerRow2 = [
-    '基本資料', '', '',
-    '啟動', '', '',
-    '熄火', '', '',
-    '行駛',
-    '運行',
-    '停留'
-  ];
-
-  const headerRow3 = [
-    '車號', '日期', '序號',
-    '時間', '區域', '地址',
-    '時間', '區域', '地址',
-    '距離(KM)',
-    '時間(min)',
-    '時間(min)'
-  ];
-
-  // Group by CarNo + TripDate
-  const groupMap = new Map();
-
-  reportData.forEach((row) => {
-    const key = `${row.CarNo ?? ''}__${row.TripDate ?? ''}`;
-    if (!groupMap.has(key)) {
-      groupMap.set(key, []);
+  const excelExport = () => {
+    if (!reportData || reportData.length === 0) {
+      alert('沒有可匯出的資料');
+      return;
     }
-    groupMap.get(key).push(row);
-  });
 
-  const dataRows = [];
+    const headerRow0 = [`日期區間:${searchTimeRange || ''}`];
+    const headerRow1 = [`${tableHeader}行程明細表`];
 
-  for (const [, rows] of groupMap) {
-    let totalDistance = 0;
-    let totalDrivingTime = 0;
-    let totalStayTime = 0;
+    const headerRow2 = [
+      '基本資料', '', '',
+      '啟動', '', '',
+      '熄火', '', '',
+      '行駛',
+      '運行',
+      '停留'
+    ];
 
-    rows.forEach((row) => {
-      const distance = Number(row.TotalDistance) || 0;
-      const drivingTime = Number(row.TotalDrivingTime) || 0;
-      const stayTime = Number(row.StayTime) || 0;
+    const headerRow3 = [
+      '車號', '日期', '序號',
+      '時間', '區域', '地址',
+      '時間', '區域', '地址',
+      '距離(KM)',
+      '時間(min)',
+      '時間(min)'
+    ];
 
-      totalDistance += distance;
-      totalDrivingTime += drivingTime;
-      totalStayTime += stayTime;
+    const dataRows = reportData.map((row) => {
+      if (row.isTotalRow) {
+        return [
+          '合計', '', '', '', '', '', '', '', '',
+          Number(row.TotalDistance || 0),
+          Number(row.TotalDrivingTime || 0),
+          Number(row.StayTime || 0)
+        ];
+      }
 
-      dataRows.push([
+      return [
         row.CarNo ?? '',
         row.TripDate ?? '',
         row.seq ?? '',
@@ -255,88 +238,75 @@ const excelExport = () => {
         row.EndTime ?? '',
         row.EndArea ?? '',
         row.EndAddress ?? '',
-        distance || '',
-        drivingTime || '',
-        stayTime || ''
-      ]);
+        row.TotalDistance ?? '',
+        row.TotalDrivingTime ?? '',
+        row.StayTime ?? ''
+      ];
     });
 
-    dataRows.push([
-      '合計', '', '', '', '', '', '', '', '',
-      Number(totalDistance.toFixed(2)),
-      Number(totalDrivingTime.toFixed(2)),
-      Number(totalStayTime.toFixed(2))
-    ]);
-  }
+    const wsData = [headerRow0, headerRow1, headerRow2, headerRow3, ...dataRows];
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
 
-  const wsData = [headerRow0, headerRow1, headerRow2, headerRow3, ...dataRows];
-  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+    worksheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 2 } },
+      { s: { r: 2, c: 3 }, e: { r: 2, c: 5 } },
+      { s: { r: 2, c: 6 }, e: { r: 2, c: 8 } },
+      { s: { r: 2, c: 9 }, e: { r: 2, c: 9 } },
+      { s: { r: 2, c: 10 }, e: { r: 2, c: 10 } },
+      { s: { r: 2, c: 11 }, e: { r: 2, c: 11 } }
+    ];
 
-  // Merge cells
-  worksheet['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }, // 日期區間
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }, // 標題
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 2 } },  // 基本資料
-    { s: { r: 2, c: 3 }, e: { r: 2, c: 5 } },  // 啟動
-    { s: { r: 2, c: 6 }, e: { r: 2, c: 8 } },  // 熄火
-    { s: { r: 2, c: 9 }, e: { r: 2, c: 9 } },  // 行駛
-    { s: { r: 2, c: 10 }, e: { r: 2, c: 10 } }, // 運行
-    { s: { r: 2, c: 11 }, e: { r: 2, c: 11 } }  // 停留
-  ];
-
-  // Merge total rows A:I
-  let currentRowIndex = 4; // data starts from row index 4 (Excel row 5)
-  for (const [, rows] of groupMap) {
-    currentRowIndex += rows.length;
-    worksheet['!merges'].push({
-      s: { r: currentRowIndex, c: 0 },
-      e: { r: currentRowIndex, c: 8 }
+    // Merge total rows A:I
+    reportData.forEach((row, index) => {
+      if (row.isTotalRow) {
+        const excelRowIndex = 4 + index; // 前面 4 列標題
+        worksheet['!merges'].push({
+          s: { r: excelRowIndex, c: 0 },
+          e: { r: excelRowIndex, c: 8 }
+        });
+      }
     });
-    currentRowIndex += 1;
-  }
 
-  // Column widths
-  worksheet['!cols'] = [
-    { wch: 12 }, // 車號
-    { wch: 12 }, // 日期
-    { wch: 8 },  // 序號
-    { wch: 20 }, // 啟動時間
-    { wch: 12 }, // 啟動區域
-    { wch: 35 }, // 啟動地址
-    { wch: 20 }, // 熄火時間
-    { wch: 12 }, // 熄火區域
-    { wch: 35 }, // 熄火地址
-    { wch: 12 }, // 距離
-    { wch: 12 }, // 運行
-    { wch: 12 }  // 停留
-  ];
+    worksheet['!cols'] = [
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 8 },
+      { wch: 20 },
+      { wch: 12 },
+      { wch: 35 },
+      { wch: 20 },
+      { wch: 12 },
+      { wch: 35 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 }
+    ];
 
-  // Optional: simple alignment only, no fill color
-  const range = XLSX.utils.decode_range(worksheet['!ref']);
-  for (let R = range.s.r; R <= range.e.r; ++R) {
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
-      if (!worksheet[cellRef]) continue;
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!worksheet[cellRef]) continue;
 
-      worksheet[cellRef].s = {
-        alignment: {
-          vertical: 'center',
-          horizontal:
-            R <= 3 || C === 0 || C === 1 || C === 2 || C >= 9
-              ? 'center'
-              : 'left',
-          wrapText: true
-        }
-      };
+        worksheet[cellRef].s = {
+          alignment: {
+            vertical: 'center',
+            horizontal:
+              R <= 3 || C === 0 || C === 1 || C === 2 || C >= 9
+                ? 'center'
+                : 'left',
+            wrapText: true
+          }
+        };
+      }
     }
-  }
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
-
-  XLSX.writeFile(workbook, 'report.xlsx');
-};
-
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
+    XLSX.writeFile(workbook, 'report.xlsx');
+  };
   const handleExport = async () => {
     if (!reportData?.length) {
       toast.current.show({ severity: 'warn', summary: 'Warning', detail: '請先選擇檢視報表', life: 3000 });

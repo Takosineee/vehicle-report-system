@@ -158,37 +158,60 @@ function createPartitionKey(carId, date) {
   return `${carId}-${year}${month}${day}`;
 }
 
-async function filteredTripLog(carId, begin) {
-  const logs = [];
-  const key = createPartitionKey(carId, begin);
+function formatDateOnly(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
-  console.log('key:', key);
+function getDatesBetween(startDate, endDate) {
+  const dates = [];
+  const current = formatDateOnly(startDate);
+  const end = formatDateOnly(endDate);
 
-  const entities = storageClient.listEntities({
-    queryOptions: {
-      filter: odata`PartitionKey eq ${key}`,
-      select: [
-        "CAR_ID",
-        "TRIP_DATE",
-        "BEGIN_SEQ_NO",
-        "BEGIN_TIME",
-        "BEGIN_REGION_ID",
-        "BEGIN_ADDRESS",
-        "END_TIME",
-        "END_REGION_ID",
-        "END_ADDRESS",
-        "LOW_SPEED_DISTANCE",
-        "MID_SPEED_DISTANCE",
-        "TOTAL_DRIVING_TIME",
-        "PartitionKey",
-        "RowKey"
-      ]
-    }
-  });
-
-  for await (const entity of entities) {
-    logs.push(entity);
+  while (current <= end) {
+    dates.push(new Date(current));
+    current.setDate(current.getDate() + 1);
   }
+
+  return dates;
+}
+
+async function filteredTripLog(carId, begin, end) {
+  const logs = [];
+  const allDates = getDatesBetween(begin, end);
+
+  for (const date of allDates) {
+    const key = createPartitionKey(carId, date);
+    console.log('key:', key);
+
+    const entities = storageClient.listEntities({
+      queryOptions: {
+        filter: odata`PartitionKey eq ${key}`,
+        select: [
+          "CAR_ID",
+          "TRIP_DATE",
+          "BEGIN_SEQ_NO",
+          "BEGIN_TIME",
+          "BEGIN_REGION_ID",
+          "BEGIN_ADDRESS",
+          "END_TIME",
+          "END_REGION_ID",
+          "END_ADDRESS",
+          "LOW_SPEED_DISTANCE",
+          "MID_SPEED_DISTANCE",
+          "TOTAL_DRIVING_TIME",
+          "PartitionKey",
+          "RowKey"
+        ]
+      }
+    });
+
+    for await (const entity of entities) {
+      logs.push(entity);
+    }
+  }
+
   return logs;
 }
 
@@ -236,85 +259,94 @@ app.post('/api/report', async (req, res) => {
   try {
     const begin = new Date(beginDateTime);
     const end = new Date(endDateTime);
-    console.log(begin)
+
     if (isNaN(begin) || isNaN(end)) {
       return res.status(400).json({ error: "invalid date format." });
-    }
-
-    let tripLogs = [];
-
-    for (let i = 0; i < cars.length; i++) {
-      console.log('carId:', cars[i]);
-
-      const logs = await filteredTripLog(cars[i], begin);
-
-      const filteredLogs = logs.filter(t =>
-
-        new Date(t.BEGIN_TIME) > begin &&
-        new Date(t.END_TIME) < end
-      );
-
-      tripLogs.push(...filteredLogs);
-    }
-
-    console.log('tripLogs:', tripLogs);
-
-    if (tripLogs.length === 0) {
-      return res.status(400).json({ error: "triplogs not loaded." });
     }
 
     const carNoMap = await getCarsMapByCompany(companyId);
     const areaNameMap = await getAreasMapByCompany(companyId);
 
-    const sortedTripLogs = [...tripLogs].sort((a, b) => {
-      const carNoA = carNoMap.get(a.CAR_ID) || "";
-      const carNoB = carNoMap.get(b.CAR_ID) || "";
+    const reportLogs = [];
 
-      if (carNoA !== carNoB) {
-        return carNoA.localeCompare(carNoB);
+    for (const carId of cars) {
+      const logs = await filteredTripLog(carId, begin, end);
+      const filteredLogs = logs.filter(t =>
+        new Date(t.BEGIN_TIME) >= begin &&
+        new Date(t.END_TIME) <= end
+      )
+        .sort((a, b) => new Date(a.BEGIN_TIME) - new Date(b.BEGIN_TIME));
+
+      if (filteredLogs.length === 0) {
+        continue;
       }
 
-      return String(a.BEGIN_TIME).localeCompare(String(b.BEGIN_TIME));
-    });
+      const carNo = carNoMap.get(carId) || "";
 
-    const seqMap = new Map();
+      let totalDistance = 0;
+      let totalDrivingTime = 0;
+      let totalStayTime = 0;
 
-    const reportLogs = sortedTripLogs.map((t, i) => {
-      const carNo = carNoMap.get(t.CAR_ID) || "";
-      const seq = (seqMap.get(t.CAR_ID) || 0) + 1;
-      seqMap.set(t.CAR_ID, seq);
+      filteredLogs.forEach((t, index) => {
+        const next = filteredLogs[index + 1];
 
-      const next = sortedTripLogs[i + 1];
-      let stayTime = 0;
-      if (next && next.CAR_ID === t.CAR_ID) {
-        const end = new Date(t.END_TIME);
-        const nextBegin = new Date(next.BEGIN_TIME);
+        let stayTime = 0;
+        if (next) {
+          const currentEnd = new Date(t.END_TIME);
+          const nextBegin = new Date(next.BEGIN_TIME);
+          stayTime = Math.max(0, Math.floor((nextBegin - currentEnd) / 60000));
+        }
 
-        stayTime = Math.floor((nextBegin - end) / 60000);
-      }
+        const distance = Number(((t.LOW_SPEED_DISTANCE + t.MID_SPEED_DISTANCE) / 60).toFixed(2));
+        const drivingTime = Number((t.TOTAL_DRIVING_TIME / 60).toFixed(2));
 
-      return {
-        seq,
-        id: `${carNo}-${t.TRIP_DATE}-${seq}`,
-        BegAddress: t.BEGIN_ADDRESS,
-        EndAddress: t.END_ADDRESS,
-        BeginTime: formatDisplayDateTime(t.BEGIN_TIME),
-        EndTime: formatDisplayDateTime(t.END_TIME),
-        TripDate: t.TRIP_DATE,
-        CarNo: carNo,
-        BegArea: areaNameMap.get(t.BEGIN_REGION_ID) || "",
-        EndArea: areaNameMap.get(t.END_REGION_ID) || "",
-        TotalDistance: Number(((t.LOW_SPEED_DISTANCE + t.MID_SPEED_DISTANCE) / 60).toFixed(2)),
-        TotalDrivingTime: Number((t.TOTAL_DRIVING_TIME / 60).toFixed(2)),
-        StayTime: stayTime
-      };
-    });
+        totalDistance += distance;
+        totalDrivingTime += drivingTime;
+        totalStayTime += stayTime;
+
+        reportLogs.push({
+          id: `${carNo}-${t.TRIP_DATE}-${index + 1}`,
+          seq: index + 1,
+          BegAddress: t.BEGIN_ADDRESS,
+          EndAddress: t.END_ADDRESS,
+          BeginTime: formatDisplayDateTime(t.BEGIN_TIME),
+          EndTime: formatDisplayDateTime(t.END_TIME),
+          TripDate: t.TRIP_DATE,
+          CarNo: carNo,
+          BegArea: areaNameMap.get(t.BEGIN_REGION_ID) || "",
+          EndArea: areaNameMap.get(t.END_REGION_ID) || "",
+          TotalDistance: distance,
+          TotalDrivingTime: drivingTime,
+          StayTime: stayTime,
+          isTotalRow: false
+        });
+      });
+
+      reportLogs.push({
+        id: `${carNo}-total`,
+        seq: "",
+        BegAddress: "",
+        EndAddress: "",
+        BeginTime: "",
+        EndTime: "",
+        TripDate: "",
+        CarNo: `${carNo} 合計`,
+        BegArea: "",
+        EndArea: "",
+        TotalDistance: Number(totalDistance.toFixed(2)),
+        TotalDrivingTime: Number(totalDrivingTime.toFixed(2)),
+        StayTime: Number(totalStayTime.toFixed(2)),
+        isTotalRow: true
+      });
+    }
+
+    if (reportLogs.length === 0) {
+      return res.status(400).json({ error: "triplogs not loaded." });
+    }
 
     res.json({
-      header: cacheStore.companyName || "",
       rows: reportLogs
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
