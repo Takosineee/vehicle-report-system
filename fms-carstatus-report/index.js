@@ -210,7 +210,7 @@ async function getTripLog(carId, begin, end) {
 app.get('/api/getFleets', async (req, res) => {
   try {
     const { companyId } = req.query;
-    if(!companyId) return res.status(400).json({error: 'company id is required.'})
+    if (!companyId) return res.status(400).json({ error: 'company id is required.' })
     const fleets = await getFleetsByCompany(companyId);
     res.json(fleets);
   } catch (err) {
@@ -245,7 +245,7 @@ app.post('/api/report', async (req, res) => {
   if (!fleets?.length || !cars?.length || !beginDateTime || !endDateTime) {
     return res.status(400).json({ error: "all fields are required." });
   }
-  if(!companyId) return res.status(400).json({error: 'company id is required.'})
+  if (!companyId) return res.status(400).json({ error: 'company id is required.' })
   try {
     const begin = new Date(beginDateTime);
     const end = new Date(endDateTime);
@@ -287,7 +287,7 @@ app.post('/api/report', async (req, res) => {
           stayTime = Math.max(0, Math.floor((nextBegin - currentEnd) / 60000));
         }
 
-        const distance = Number(((t.LOW_SPEED_DISTANCE + t.MID_SPEED_DISTANCE) / 60).toFixed(2));
+        const distance = Math.round((((t.LOW_SPEED_DISTANCE + t.MID_SPEED_DISTANCE) / 1000) + Number.EPSILON) * 100) / 100;
         const drivingTime = Number((t.TOTAL_DRIVING_TIME / 60).toFixed(2));
 
         totalDistance += distance;
