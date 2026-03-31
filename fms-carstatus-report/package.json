@@ -1,5 +1,5 @@
 {
-  "name": "vehicle-report-backend",
+  "name": "fms-carstatus-report",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {

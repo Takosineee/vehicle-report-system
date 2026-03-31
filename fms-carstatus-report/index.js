@@ -4,7 +4,8 @@ const { sql, poolPromise, storageClient } = require('./connection.js');
 const { odata } = require("@azure/data-tables");
 const { pool } = require('mssql');
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
+const path = require("path");
 
 app.use(cors());
 app.use(express.json());
@@ -209,7 +210,7 @@ async function getTripLog(carId, begin, end) {
 app.get('/api/getFleets', async (req, res) => {
   try {
     const { companyId } = req.query;
-    // if(!companyId) return res.status(400).json({error: 'company id is required.'})
+    if(!companyId) return res.status(400).json({error: 'company id is required.'})
     const fleets = await getFleetsByCompany(companyId);
     res.json(fleets);
   } catch (err) {
@@ -244,7 +245,7 @@ app.post('/api/report', async (req, res) => {
   if (!fleets?.length || !cars?.length || !beginDateTime || !endDateTime) {
     return res.status(400).json({ error: "all fields are required." });
   }
-
+  if(!companyId) return res.status(400).json({error: 'company id is required.'})
   try {
     const begin = new Date(beginDateTime);
     const end = new Date(endDateTime);
@@ -342,7 +343,10 @@ app.post('/api/report', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-app.listen(port, 'localhost', () => {
-  console.log(`Backend listening at http://localhost:${port}`);
+app.use(express.static(path.join(__dirname, "dist")));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "dist", "index.html"))
+})
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });

@@ -14,8 +14,7 @@ import '../node_modules/primeflex/primeflex.css'
 import './App.css'
 
 function App() {
-  //const COMPANY_ID="201705-000001";
-  const apiUrl = import.meta.env.VITE_API_URL;
+  const apiUrl = import.meta.env.VITE_API_URL || "";
   const [filters, setFilters] = useState({
     fleets: [],
     cars: [],
@@ -25,6 +24,8 @@ function App() {
     endTime: ''
   })
   const [companyId, setCompanyId] = useState('')
+  const [userId, setUserId] = useState('')
+  const [language, setLanguage] = useState('')
   const [reportData, setReportData] = useState([])
   const [tableHeader, setTableHeader] = useState('');
 
@@ -48,13 +49,36 @@ function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setCompanyId(params.get('companyId') || '');
+    const uu = params.get("uu");
+    const lang = params.get("language");
 
+    let companyId = "";
+    let userId = "";
+
+    if (uu) {
+      try {
+        const decoded = atob(uu);
+        const match = decoded.match(/companyname:(.*?)userid:(.*)/);
+
+        companyId = match?.[1]?.trim() || "";
+        userId = match?.[2]?.trim() || "";
+      } catch (err) {
+        console.error("Failed to decode uu", err);
+      }
+    }
+
+    setLanguage(lang || "");
+    setUserId(userId);
+    setCompanyId(companyId);
   }, []);
 
   const fetchFleets = async () => {
     try {
       setLoadingFleets(true)
+      if (!companyId) {
+        toast.current.show({ severity: 'warn', summary: 'Warning', detail: 'company id is missing', life: 3000 });
+        return;
+      }
       const res = await fetch(`${apiUrl}/api/getFleets?companyId=${companyId}`);
       const data = await res.json();
       const fleetOptions = data.map(f => ({
@@ -149,7 +173,10 @@ function App() {
       toast.current.show({ severity: 'warn', summary: 'Warning', detail: '開始日期應小於結束日期', life: 3000 });
       return;
     }
-
+    if (!companyId) {
+      toast.current.show({ severity: 'warn', summary: 'Warning', detail: 'company id is missing', life: 3000 });
+      return;
+    }
     const data = {
       fleets: newFilters.fleets,
       cars: newFilters.cars,
@@ -157,12 +184,14 @@ function App() {
       endDateTime: formatEnd,
       companyId: companyId
     };
+
     await fetchReport(data);
   }
 
   const fetchReport = async (loadedData) => {
     setLoading(true);
     try {
+
       const response = await fetch(`${apiUrl}/api/report`, {
         method: 'POST',
         headers: {
