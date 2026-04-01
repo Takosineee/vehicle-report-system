@@ -20,8 +20,8 @@ function App() {
     cars: [],
     startDate: '',
     endDate: '',
-    startTime: '',
-    endTime: ''
+    startTime:  { name: "00:00", code: "00:00" },
+    endTime:  { name: "23:59", code: "23:59" }
   })
   const [companyId, setCompanyId] = useState('')
   const [userId, setUserId] = useState('')
@@ -45,8 +45,9 @@ function App() {
   let minDate = new Date(today);
   minDate.setMonth(today.getMonth() - 3);
 
-  const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'))
-
+  const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0') + ":00")
+  hours.push("23:59");
+  
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const uu = params.get("uu");
@@ -71,7 +72,6 @@ function App() {
     setUserId(userId);
     setCompanyId(companyId);
   }, []);
-
   const fetchFleets = async () => {
     try {
       setLoadingFleets(true)
@@ -80,12 +80,16 @@ function App() {
         return;
       }
       const res = await fetch(`${apiUrl}/api/getFleets?companyId=${companyId}`);
-      const data = await res.json();
-      const fleetOptions = data.map(f => ({
-        label: f.FleetName,
-        value: f.fleetID
-      }))
-      setFleets(fleetOptions);
+      if (res.ok) {
+        const data = await res.json();
+        const fleetOptions = data
+          .filter(f => f.fleetID != null && f.fleetID !== "")
+          .map(f => ({
+            label: f.FleetName,
+            value: f.fleetID
+          }));
+        setFleets(fleetOptions);
+      }
     } catch (err) {
       console.error("error fetching fleets", err);
     } finally {
@@ -94,29 +98,32 @@ function App() {
   }
 
 
-
   // Fetch cars when fleet changes
 
 
   const fetchCarsByFleetIds = async (selectedFleets) => {
     setLoadingCars(true)
-
+    console.log(selectedFleets);
     try {
-      const params = new URLSearchParams();
-
-      selectedFleets.forEach(f => {
-        params.append("fleetID", f)
+      const res = await fetch(`${apiUrl}/api/getCarsByFleetIds`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ fleetIDs: selectedFleets })
       })
-      const res = await fetch(`${apiUrl}/api/getCarsByFleetIds?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
 
-      const data = await res.json()
-
-      const carsByFleetIds = data.map(c => ({
-        fleetID: c.fleetID,
-        label: c.CarNo,
-        value: c.CarID
-      }))
-      setCarsByFleetIds(carsByFleetIds)
+        const carsByFleetIds = data
+          .filter(c => c.CarID != "" && c.CarID != null)
+          .map(c => ({
+            fleetID: c.fleetID,
+            label: c.CarNo,
+            value: c.CarID
+          }))
+        setCarsByFleetIds(carsByFleetIds)
+      }
     } catch (err) {
       console.error("error fetching cars", err)
     } finally {
@@ -130,13 +137,13 @@ function App() {
 
   const formatDateTime = (date, time) => {
     if (!date) return '';
-
+    const [h,m]=time.split(":");
     return new Date(
       date.getFullYear(),
       date.getMonth(),
       date.getDate(),
-      Number(time),
-      0,
+      Number(h),
+      Number(m),
       0
     );
   };
@@ -352,7 +359,7 @@ function App() {
       <div className="filter-section">
 
         <div className="grid">
-          <div className="col-4">
+          <div className="col-4 min-w-0">
             <label>車隊</label>
             <MultiSelect
               ref={fleetsRef}
@@ -363,7 +370,7 @@ function App() {
               onChange={(selected) => {
                 setFilters(prev => ({
                   ...prev,
-                  fleets: selected.value,
+                  fleets: [...selected.value],
                   cars: []
                 }))
               }
@@ -378,7 +385,7 @@ function App() {
               options={loadingFleets ? [] : fleets}
             />
           </div>
-          <div className="col-4">
+          <div className="col-4 min-w-0">
             <label >車號</label>
             <MultiSelect
               ref={carsRef}
@@ -407,6 +414,7 @@ function App() {
               disabled={!filters.fleets?.length || loadingCars}
               options={loadingCars ? [] : carsByFleetIds.map(c => ({ label: c.label, value: c.value }))}
               loading={loadingCars}
+              filter
             />
           </div>
           <div className="col-4">
@@ -452,7 +460,7 @@ function App() {
           </div>
           <div className="col-3">
             <label htmlFor="endTime">結束時間</label>
-            <Dropdown value={filters.endTime} onChange={(e) => {
+            <Dropdown value={filters.endTime} onChange={(e) => {              
               setFilters(prev => ({
                 ...prev,
                 endTime: e.value

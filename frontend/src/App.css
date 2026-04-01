@@ -1,4 +1,14 @@
+.p-multiselect .p-multiselect-label-container {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+}
 
+.p-multiselect .p-multiselect-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
 .report-container {
   width:auto;
   text-align: left !important;

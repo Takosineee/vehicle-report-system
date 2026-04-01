@@ -60,10 +60,10 @@ async function getCarsMapByCompany(companyId) {
     const result = await pool
       .request()
       .input('CompanyID', sql.NVarChar, companyId || '')
-      .query(`SELECT CompanyName, fleetSetting_CARInfoID, CarNo FROM Fleetmgm_fleetSetting_CARInfo(NOLOCK) WHERE CompanyID = @CompanyID`)
-    const records = result.recordset;
+      .query(`SELECT CompanyName, fleetSetting_CARInfoID AS CarID, CarNo FROM Fleetmgm_fleetSetting_CARInfo(NOLOCK) WHERE CompanyID = @CompanyID`)
+    const records = (result.recordset).filter(r => r.CarID != "" && r.CarID != null);
 
-    const carNoMap = new Map(records.map(c => [c.fleetSetting_CARInfoID, c.CarNo]));
+    const carNoMap = new Map(records.map(c => [c.CarID, c.CarNo]));
     if (records.length > 0) {
       setCache(cacheStore.companyName, companyId, records[0].CompanyName);
     }
@@ -90,7 +90,7 @@ async function getAreasMapByCompany(companyId) {
     ) c ON m.PortalID = c.PortalID
     WHERE c.fleetSetting_CompanyID = @CompanyID`)
 
-    const records = result.recordset;
+    const records = (result.recordset).filter(r => r.RegionSettingID != "" && r.RegionSettingID != null);
 
     const areaMap = new Map(records.map(a => [a.RegionSettingID, a.AreaName]));
     setCache(cacheStore.areasByCompany, companyId, areaMap);
@@ -109,7 +109,7 @@ async function getFleetsByCompany(companyId) {
     .input("CompanyID", sql.NVarChar, companyId)
     .query("SELECT fleetID, FleetName FROM Fleetmgm_fleetSetting_CARInfo WHERE CompanyID=@CompanyID GROUP BY fleetID, FleetName ORDER BY FleetName");
 
-  const records = result.recordset;
+  const records = (result.recordset).filter(r => r.fleetID != "" && r.fleetID != null);
   setCache(cacheStore.fleetsByCompany, companyId, records);
   return records;
 
@@ -121,14 +121,13 @@ async function getCarsByFleetIds(fleetIds) {
 
   const pool = await poolPromise;
 
-  const request = pool.request();
+  const request = await pool.request();
   let placeholders = fleetIds.map((id, i) => {
     request.input(`fleetID${i}`, sql.NVarChar, id);
     return `@fleetID${i}`
   }).join(", ")
-
-  const result = await request.query(`SELECT DISTINCT fleetID, fleetSetting_CARInfoID AS CarID, CarNo FROM Fleetmgm_fleetSetting_CARInfo WHERE fleetID IN (${placeholders}) ORDER BY CarNo;`);
-  const records = result.recordset;
+  const result = await request.query(`SELECT DISTINCT fleetSetting_CARInfoID AS CarID, CarNo FROM Fleetmgm_fleetSetting_CARInfo WHERE fleetID IN (${placeholders}) ORDER BY CarNo;`);
+  const records = (result.recordset).filter(r => r.CarID != "" && r.CarID != null);
 
   setCache(cacheStore.carsByFleet, fleetIds, records)
   return records
@@ -206,7 +205,6 @@ async function getTripLog(carId, begin, end) {
   return logs;
 }
 
-
 app.get('/api/getFleets', async (req, res) => {
   try {
     const { companyId } = req.query;
@@ -218,18 +216,11 @@ app.get('/api/getFleets', async (req, res) => {
   }
 })
 
-app.get('/api/getCarsByFleetIds', async (req, res) => {
-  const { fleetID } = req.query;
-  if (!fleetID) {
-    return res.status(400).json({ error: 'fleetIds is required' });
-  }
-  let fleetIDs = [];
+app.post('/api/getCarsByFleetIds', async (req, res) => {
+  const { fleetIDs } = req.body;
   try {
-    if (!Array.isArray(fleetID)) {
-      fleetIDs = [fleetID];
-    }
-    else {
-      fleetIDs = fleetID;
+    if (!Array.isArray(fleetIDs) || fleetIDs.length === 0) {
+      return res.status(400).json({ error: 'fleetIDs is required' });
     }
 
     const cars = await getCarsByFleetIds(fleetIDs);
@@ -245,7 +236,8 @@ app.post('/api/report', async (req, res) => {
   if (!fleets?.length || !cars?.length || !beginDateTime || !endDateTime) {
     return res.status(400).json({ error: "all fields are required." });
   }
-  if (!companyId) return res.status(400).json({ error: 'company id is required.' })
+  if (!companyId) return res.status(400).json({ error: 'company id is required.' });
+
   try {
     const begin = new Date(beginDateTime);
     const end = new Date(endDateTime);
@@ -259,77 +251,98 @@ app.post('/api/report', async (req, res) => {
 
     const reportLogs = [];
 
-    for (const carId of cars) {
-      const logs = await getTripLog(carId, begin, end);
-      const filteredLogs = logs.filter(t =>
-        new Date(t.BEGIN_TIME) >= begin &&
-        new Date(t.END_TIME) <= end
-      )
+    const carLogsResults = await Promise.all(
+      cars.map(async (carId) => {
+        const logs = await getTripLog(carId, begin, end);
+        return { carId, logs };
+      })
+    );
+
+    for (const { carId, logs } of carLogsResults) {
+      const filteredLogs = logs
+        .filter(t =>
+          new Date(t.BEGIN_TIME) >= begin &&
+          new Date(t.END_TIME) <= end
+        )
         .sort((a, b) => new Date(a.BEGIN_TIME) - new Date(b.BEGIN_TIME));
 
-      if (filteredLogs.length === 0) {
-        continue;
-      }
+      if (filteredLogs.length === 0) continue;
 
       const carNo = carNoMap.get(carId) || "";
 
-      let totalDistance = 0;
-      let totalDrivingTime = 0;
-      let totalStayTime = 0;
-
-      filteredLogs.forEach((t, index) => {
-        const next = filteredLogs[index + 1];
-
-        let stayTime = 0;
-        if (next) {
-          const currentEnd = new Date(t.END_TIME);
-          const nextBegin = new Date(next.BEGIN_TIME);
-          stayTime = Math.max(0, Math.floor((nextBegin - currentEnd) / 60000));
+      // Group by TripDate
+      const groupedByDate = filteredLogs.reduce((acc, log) => {
+        const key = log.TRIP_DATE;
+        if (!acc[key]) {
+          acc[key] = [];
         }
+        acc[key].push(log);
+        return acc;
+      }, {});
 
-        const distance = Math.round((((t.LOW_SPEED_DISTANCE + t.MID_SPEED_DISTANCE) / 1000) + Number.EPSILON) * 100) / 100;
-        const drivingTime = Number((t.TOTAL_DRIVING_TIME / 60).toFixed(2));
+      for (const tripDate of Object.keys(groupedByDate).sort()) {
+        const dailyLogs = groupedByDate[tripDate];
 
-        totalDistance += distance;
-        totalDrivingTime += drivingTime;
-        totalStayTime += stayTime;
+        let totalDistance = 0;
+        let totalDrivingTime = 0;
+        let totalStayTime = 0;
+
+        dailyLogs.forEach((t, index) => {
+          const next = dailyLogs[index + 1];
+
+          let stayTime = 0;
+          if (next) {
+            const currentEnd = new Date(t.END_TIME);
+            const nextBegin = new Date(next.BEGIN_TIME);
+            stayTime = Math.max(0, Math.floor((nextBegin - currentEnd) / 60000));
+          }
+
+          const distance = Math.round(
+            (((t.LOW_SPEED_DISTANCE + t.MID_SPEED_DISTANCE) / 1000) + Number.EPSILON) * 100
+          ) / 100;
+
+          const drivingTime = Number((t.TOTAL_DRIVING_TIME / 60).toFixed(2));
+
+          totalDistance += distance;
+          totalDrivingTime += drivingTime;
+          totalStayTime += stayTime;
+
+          reportLogs.push({
+            id: `${carNo}-${tripDate}-${index + 1}`,
+            seq: index + 1,
+            BegAddress: t.BEGIN_ADDRESS,
+            EndAddress: t.END_ADDRESS,
+            BeginTime: formatDisplayDateTime(t.BEGIN_TIME),
+            EndTime: formatDisplayDateTime(t.END_TIME),
+            TripDate: t.TRIP_DATE,
+            CarNo: carNo,
+            BegArea: areaNameMap.get(t.BEGIN_REGION_ID) || "",
+            EndArea: areaNameMap.get(t.END_REGION_ID) || "",
+            TotalDistance: distance,
+            TotalDrivingTime: drivingTime,
+            StayTime: stayTime,
+            isTotalRow: false
+          });
+        });
 
         reportLogs.push({
-          id: `${carNo}-${t.TRIP_DATE}-${index + 1}`,
-          seq: index + 1,
-          BegAddress: t.BEGIN_ADDRESS,
-          EndAddress: t.END_ADDRESS,
-          BeginTime: formatDisplayDateTime(t.BEGIN_TIME),
-          EndTime: formatDisplayDateTime(t.END_TIME),
-          TripDate: t.TRIP_DATE,
-          CarNo: carNo,
-          BegArea: areaNameMap.get(t.BEGIN_REGION_ID) || "",
-          EndArea: areaNameMap.get(t.END_REGION_ID) || "",
-          TotalDistance: distance,
-          TotalDrivingTime: drivingTime,
-          StayTime: stayTime,
-          isTotalRow: false
+          id: `${carNo}-${tripDate}-total`,
+          seq: "",
+          BegAddress: "",
+          EndAddress: "",
+          BeginTime: "",
+          EndTime: "",
+          TripDate: tripDate,
+          CarNo: "合計",
+          BegArea: "",
+          EndArea: "",
+          TotalDistance: Number(totalDistance.toFixed(2)),
+          TotalDrivingTime: Number(totalDrivingTime.toFixed(2)),
+          StayTime: Number(totalStayTime.toFixed(2)),
+          isTotalRow: true
         });
-      });
-
-      reportLogs.push({
-        id: `${carNo}-total`,
-        seq: "",
-        BegAddress: "",
-        EndAddress: "",
-        BeginTime: "",
-        EndTime: "",
-        TripDate: "",
-        CarNo: `合計`,
-        BegArea: "",
-        EndArea: "",
-        TotalDistance: Number(totalDistance.toFixed(2)),
-        TotalDrivingTime: Number(totalDrivingTime.toFixed(2)),
-        StayTime: Number(totalStayTime.toFixed(2)),
-        isTotalRow: true
-      });
+      }
     }
-
     if (reportLogs.length === 0) {
       return res.status(400).json({ error: "triplogs not loaded." });
     }
