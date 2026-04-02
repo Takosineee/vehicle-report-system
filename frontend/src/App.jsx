@@ -20,15 +20,15 @@ function App() {
     cars: [],
     startDate: '',
     endDate: '',
-    startTime:  { name: "00:00", code: "00:00" },
-    endTime:  { name: "23:59", code: "23:59" }
+    startTime: { name: "00:00", code: "00:00" },
+    endTime: { name: "23:59", code: "23:59" }
   })
   const [companyId, setCompanyId] = useState('')
   const [userId, setUserId] = useState('')
   const [language, setLanguage] = useState('')
   const [reportData, setReportData] = useState([])
   const [tableHeader, setTableHeader] = useState('');
-
+  const [testMode, setTestMode] = useState(false);
   const [loading, setLoading] = useState(false)
   const [loadingFleets, setLoadingFleets] = useState(false)
   const [loadingCars, setLoadingCars] = useState(false)
@@ -41,14 +41,15 @@ function App() {
   const carsRef = useRef(null);
   const skipCarsFocusRef = useRef(false);
 
-  let today = new Date();
-  let minDate = new Date(today);
-  minDate.setMonth(today.getMonth() - 3);
-
-  const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0') + ":00")
-  hours.push("23:59");
-  
+  //param settings
   useEffect(() => {
+    const isLocal = window.location.hostname === "localhost"
+    setTestMode(isLocal);
+    if (isLocal) {
+      const params = new URLSearchParams(window.location.search);
+      setCompanyId(params.get('companyId') || '');
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const uu = params.get("uu");
     const lang = params.get("language");
@@ -72,6 +73,44 @@ function App() {
     setUserId(userId);
     setCompanyId(companyId);
   }, []);
+
+  //date
+  let today = new Date();
+  //set limit to 1 yr in local test mode
+  let minDate = new Date(today);
+  testMode ? minDate.setFullYear(today.getFullYear() - 1) : minDate.setMonth(today.getMonth() - 3);
+  const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0') + ":00")
+  hours.push("23:59");
+  
+
+
+
+  const formatDateTime = (date, time) => {
+    if (!date) return '';
+    const [h, m] = time.split(":");
+    return new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      Number(h),
+      Number(m),
+      0
+    );
+  };
+  const formatDisplayDateTime = (value) => {
+    const date = new Date(value);
+    if (isNaN(date)) return '';
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
+
+    return `${year}/${month}/${day} ${hour}:${minute}`;
+  };
+
+  //fetch
   const fetchFleets = async () => {
     try {
       setLoadingFleets(true)
@@ -96,10 +135,6 @@ function App() {
       setLoadingFleets(false)
     }
   }
-
-
-  // Fetch cars when fleet changes
-
 
   const fetchCarsByFleetIds = async (selectedFleets) => {
     setLoadingCars(true)
@@ -131,34 +166,6 @@ function App() {
 
     }
   }
-
-
-
-
-  const formatDateTime = (date, time) => {
-    if (!date) return '';
-    const [h,m]=time.split(":");
-    return new Date(
-      date.getFullYear(),
-      date.getMonth(),
-      date.getDate(),
-      Number(h),
-      Number(m),
-      0
-    );
-  };
-  const formatDisplayDateTime = (value) => {
-    const date = new Date(value);
-    if (isNaN(date)) return '';
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hour = String(date.getHours()).padStart(2, '0');
-    const minute = String(date.getMinutes()).padStart(2, '0');
-
-    return `${year}/${month}/${day} ${hour}:${minute}`;
-  };
   const loadData = async () => {
 
     const newFilters = {
@@ -166,7 +173,7 @@ function App() {
       startTime: filters.startTime?.name || '',
       endTime: filters.endTime?.name || ''
     };
-
+    console.log(newFilters)
     if (!newFilters.fleets?.length || !newFilters.cars?.length || !newFilters.startDate || !newFilters.endDate || !newFilters.startTime || !newFilters.endTime) {
       setLoading(false);
       toast.current.show({ severity: 'warn', summary: 'Warning', detail: '請填寫完整搜尋條件', life: 3000 });
@@ -226,6 +233,7 @@ function App() {
     }
   }
 
+  //excel
   const excelExport = () => {
     if (!reportData || reportData.length === 0) {
       alert('沒有可匯出的資料');
@@ -460,7 +468,8 @@ function App() {
           </div>
           <div className="col-3">
             <label htmlFor="endTime">結束時間</label>
-            <Dropdown value={filters.endTime} onChange={(e) => {              
+            <Dropdown value={filters.endTime} onChange={(e) => {
+
               setFilters(prev => ({
                 ...prev,
                 endTime: e.value
