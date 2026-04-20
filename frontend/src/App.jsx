@@ -28,7 +28,6 @@ function App() {
   const [language, setLanguage] = useState('')
   const [reportData, setReportData] = useState([])
   const [tableHeader, setTableHeader] = useState('');
-  const [testMode, setTestMode] = useState(false);
   const [loading, setLoading] = useState(false)
   const [loadingFleets, setLoadingFleets] = useState(false)
   const [loadingCars, setLoadingCars] = useState(false)
@@ -43,13 +42,7 @@ function App() {
 
   //param settings
   useEffect(() => {
-    const isLocal = window.location.hostname === "localhost"
-    setTestMode(isLocal);
-    if (isLocal) {
-      const params = new URLSearchParams(window.location.search);
-      setCompanyId(params.get('companyId') || '');
-      return;
-    }
+
     const params = new URLSearchParams(window.location.search);
     const uu = params.get("uu");
     const lang = params.get("language");
@@ -78,10 +71,10 @@ function App() {
   let today = new Date();
   //set limit to 1 yr in local test mode
   let minDate = new Date(today);
-  testMode ? minDate.setFullYear(today.getFullYear() - 1) : minDate.setMonth(today.getMonth() - 3);
+  minDate.setMonth(today.getMonth() - 3);
   const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0') + ":00")
   hours.push("23:59");
-  
+
 
 
 

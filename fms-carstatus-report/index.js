@@ -201,6 +201,7 @@ async function getTripLog(carId, begin, end) {
 
     for await (const entity of entities) {
       logs.push(entity);
+      console.log(entity);
     }
   }
 
@@ -296,14 +297,21 @@ app.post('/api/report', async (req, res) => {
           if (next) {
             const currentEnd = new Date(t.END_TIME);
             const nextBegin = new Date(next.BEGIN_TIME);
-            stayTime = Math.max(0, Math.floor((nextBegin - currentEnd) / 60000));
+
+            const currentEndMinuteOnly = new Date(currentEnd);
+            currentEndMinuteOnly.setSeconds(0, 0);
+
+            const nextBeginMinuteOnly = new Date(nextBegin);
+            nextBeginMinuteOnly.setSeconds(0, 0);
+
+            stayTime = Math.max(0, (nextBeginMinuteOnly - currentEndMinuteOnly) / 60000);
           }
 
           const distance = Math.round(
             (((t.LOW_SPEED_DISTANCE + t.MID_SPEED_DISTANCE) / 1000) + Number.EPSILON) * 100
           ) / 100;
 
-          const drivingTime = Number((t.TOTAL_DRIVING_TIME / 60).toFixed(2));
+          const drivingTime = Math.round(((t.TOTAL_DRIVING_TIME / 60) + Number.EPSILON) * 100) / 100;
 
           totalDistance += distance;
           totalDrivingTime += drivingTime;
