@@ -21,7 +21,7 @@ const formatDisplayDateTime = (value) => {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false
+    hourCycle: 'h23'
   }).format(date).replace(/\//g, '/');
 };
 
@@ -172,39 +172,38 @@ function getDatesBetween(startDate, endDate) {
 
 async function getTripLog(carId, begin, end) {
   const logs = [];
-  const allDates = getDatesBetween(begin, end);
+  const startDate = formatDateOnly(begin);
+  const endDate = formatDateOnly(end);
 
-  for (const date of allDates) {
-    const key = createPartitionKey(carId, date);
+  const startKey = createPartitionKey(carId, startDate);
+  const endKey = createPartitionKey(carId, endDate);
 
-    const entities = storageClient.listEntities({
-      queryOptions: {
-        filter: odata`PartitionKey eq ${key}`,
-        select: [
-          "CAR_ID",
-          "TRIP_DATE",
-          "BEGIN_SEQ_NO",
-          "BEGIN_TIME",
-          "BEGIN_REGION_ID",
-          "BEGIN_ADDRESS",
-          "END_TIME",
-          "END_REGION_ID",
-          "END_ADDRESS",
-          "LOW_SPEED_DISTANCE",
-          "MID_SPEED_DISTANCE",
-          "TOTAL_DRIVING_TIME",
-          "PartitionKey",
-          "RowKey"
-        ]
-      }
-    });
-
-    for await (const entity of entities) {
-      logs.push(entity);
-      console.log(entity);
+  const entities = storageClient.listEntities({
+    queryOptions: {
+      filter: odata`PartitionKey ge ${startKey} and PartitionKey le ${endKey}`,
+      select: [
+        "CAR_ID",
+        "TRIP_DATE",
+        "BEGIN_SEQ_NO",
+        "BEGIN_TIME",
+        "BEGIN_REGION_ID",
+        "BEGIN_ADDRESS",
+        "END_TIME",
+        "END_REGION_ID",
+        "END_ADDRESS",
+        "LOW_SPEED_DISTANCE",
+        "MID_SPEED_DISTANCE",
+        "TOTAL_DRIVING_TIME",
+        "PartitionKey",
+        "RowKey"
+      ]
     }
-  }
+  });
 
+  for await (const entity of entities) {
+    //console.log("entity: ", entity);
+    logs.push(entity);
+  }
   return logs;
 }
 

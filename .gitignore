@@ -1,6 +1,6 @@
-**/.env
-**/node_modules/
-**/Dockerfile
-README.md
-docker-compose.yml
-*.zip
+node_modules/
+.env
+nginx*
+Docker*
+*.bin
+dist/
